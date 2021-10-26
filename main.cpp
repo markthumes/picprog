@@ -22,6 +22,13 @@
 #define TEXIT 1
 #define TDIS 300
 
+typedef struct reggi{
+	uint8_t addr;
+	uint8_t bank;
+	reggi(uint8_t a, uint8_t b):addr(a),bank(b){
+	}
+}Register;
+
 namespace Instructions{
 
 	/* SPI Programming instructions */
@@ -36,6 +43,25 @@ namespace Instructions{
 	const uint8_t BEGININTPROGRAM   = 0xe0;
 	const uint8_t BEGINEXTPROGRAM   = 0xc0;
 	const uint8_t ENDEXTPROGRAM     = 0x82;
+
+	const Register PORTA( 0x0c, 0 );
+	const Register PORTB( 0x0d, 0 );
+	const Register PORTC( 0x0e, 0 );
+	const Register PORTD( 0x0f, 0 );
+	const Register PORTE( 0x10, 0 );
+	const Register TRISA( 0x12, 0 );
+	const Register TRISB( 0x13, 0 );
+	const Register TRISC( 0x14, 0 );
+	const Register TRISD( 0x15, 0 );
+	const Register TRISE( 0x16, 0 );
+	const Register LATA ( 0x18, 0 );
+	const Register LATB ( 0x19, 0 );
+	const Register LATC ( 0x1a, 0 );
+	const Register LATD ( 0x1b, 0 );
+	const Register LATE ( 0x1c, 0 );
+	const Register ARGS ( 0x0c, 0 );
+	const Register GRAM ( 0x20, 0 );
+	const Register CRAM ( 0x70, 0 ); //COMMON Register RAM
 
 	/* PIC Instruction Set */
 	/* Byte-Oriented Operations */
@@ -404,32 +430,82 @@ private:
 using namespace Instructions;
 int main( int argc, char** argv ){
 
+	uint32_t config[] = {
+		0x0111, //0x8007
+		0x3218, //0x8008
+		0x0000, //0x8009
+		0x2b98, //0x800a
+		0x0001  //0x800b
+	};
+	uint32_t userid[] = {
+		'M', 'a', 'r', 'k'
+	};
 
 	uint32_t program[] = {
-		BRA(4), 
+		//MAIN
+		BRA(3),
 		0x0000,
 		0x0000,
-		BRA(10),
+		0x0000, //CALL SAVE DATA...
+		//INIT IO
 		MOVLB(0),
-		MOVF(true,0x00),
+		MOVLW(0x01),
+		MOVWF(TRISA.addr),
+		MOVLW(0xff),
+		MOVWF(TRISB.addr),
+		MOVLW(0x00),
+		MOVWF(TRISC.addr),
 
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000
+		//LOAD Temporary data in General RAM
+		MOVLB(0),
+		MOVLW(0xaa),
+		MOVWF(GRAM.addr+0);
+		MOVLW(0x02),
+		MOVWF(GRAM.addr+1);
+		MOVLW(0x03),
+		MOVWF(GRAM.addr+2);
+		MOVLW(0x04),
+		MOVWF(GRAM.addr+3);
+		MOVLW(0x05),
+		MOVWF(GRAM.addr+4);
+		MOVLW(0x06),
+		MOVWF(GRAM.addr+5);
+		MOVLW(0x07),
+		MOVWF(GRAM.addr+6);
+		MOVLW(0x08),
+		MOVWF(GRAM.addr+7);
+
+		//Shift From RAM to Output
+		MOVLB(0),
+		MOVF(GRAM.addr+0),
+		MOVWF(ARGS.addr+0), //SHIFT_BYTE_OUT_ARG_RAM
+		MOVLW(LATA.addr),
+		MOVWF(ARGS.addr+1), //CURRENT_LATCH
+		MOVLW(0x80),
+		MOVWF(ARGS.addr+2), //CURRENT_PIN
+		CALL(37),
+		SLEEP(),
+
+		//SHIFT BYTE OUT
+		MOVLB(0),
+		MOVLW(8),
+		MOVWF(CRAM.addr+0), //SHIFT_BYTE_OUT_ARG_RAM
+		BTFSC(0x01, ARGS.addr+0),
+		BRA(2),
+		CALL(SHIFT_BIT_OUT_LOW),
+		BRA(1),
+		CALL(SHIFT_BIT_OUT_HIGH),
+		RRF(true, ARGS.addr+0),
+		MOVLF(1),
+		SUBWF(true, CRAM.addr+0),
+		MOVLB(0),
+		BTFSC(2,0x03),
+		BRA(-14),
+		RETURN(),
+
+		//SHIFT_BIT_OUT_HIGH
+		//SHIFT_BIT_OUT_LOW
+
 
 
 	};
@@ -455,9 +531,6 @@ int main( int argc, char** argv ){
 	
 	fprintf(stdout, "\n");
 	
-	uint32_t userid[] = {
-		0x0001, 0x0002, 0x0003, 0x0004
-	};
 	pic.setPC(0x8000);
 	for( int i = 0; i < 4; i++ ){
 		pic.writeNVM( userid[i] );
@@ -471,13 +544,6 @@ int main( int argc, char** argv ){
 		pic.incPC();
 	}
 
-	uint32_t config[] = {
-		0x0111, //0x8007
-		0x3218, //0x8008
-		0x0000, //0x8009
-		0x2b98, //0x800a
-		0x0001  //0x800b
-	};
 
 	fprintf(stdout, "\n");
 
