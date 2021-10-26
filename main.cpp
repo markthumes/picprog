@@ -44,6 +44,7 @@ namespace Instructions{
 	const uint8_t BEGINEXTPROGRAM   = 0xc0;
 	const uint8_t ENDEXTPROGRAM     = 0x82;
 
+	const Register STATUS(0x03, 0 );
 	const Register PORTA( 0x0c, 0 );
 	const Register PORTB( 0x0d, 0 );
 	const Register PORTC( 0x0e, 0 );
@@ -59,7 +60,7 @@ namespace Instructions{
 	const Register LATC ( 0x1a, 0 );
 	const Register LATD ( 0x1b, 0 );
 	const Register LATE ( 0x1c, 0 );
-	const Register ARGS ( 0x0c, 0 );
+	const Register SFR  ( 0x0c, 0 );
 	const Register GRAM ( 0x20, 0 );
 	const Register CRAM ( 0x70, 0 ); //COMMON Register RAM
 
@@ -441,14 +442,23 @@ int main( int argc, char** argv ){
 		'M', 'a', 'r', 'k'
 	};
 
+#if 1
 	uint32_t program[] = {
 		//MAIN
-		BRA(3),
+		BRA(12),
 		0x0000,
 		0x0000,
 		0x0000, //CALL SAVE DATA...
-		//INIT IO
-		MOVLB(0),
+		MOVLB(STATUS.bank),
+		MOVLW(0xff),
+		MOVWF(CRAM.addr+0),
+		MOVLW(1),
+		SUBWF(1,CRAM.addr+0),
+		BTFSC(3,STATUS.addr),
+		BRA(-5),
+		RETURN(),
+		
+		MOVLB(0), //INIT IO
 		MOVLW(0x01),
 		MOVWF(TRISA.addr),
 		MOVLW(0xff),
@@ -459,56 +469,151 @@ int main( int argc, char** argv ){
 		//LOAD Temporary data in General RAM
 		MOVLB(0),
 		MOVLW(0xaa),
-		MOVWF(GRAM.addr+0);
+		MOVWF(GRAM.addr+0),
 		MOVLW(0x02),
-		MOVWF(GRAM.addr+1);
+		MOVWF(GRAM.addr+1),
 		MOVLW(0x03),
-		MOVWF(GRAM.addr+2);
+		MOVWF(GRAM.addr+2),
 		MOVLW(0x04),
-		MOVWF(GRAM.addr+3);
+		MOVWF(GRAM.addr+3),
 		MOVLW(0x05),
-		MOVWF(GRAM.addr+4);
+		MOVWF(GRAM.addr+4),
 		MOVLW(0x06),
-		MOVWF(GRAM.addr+5);
+		MOVWF(GRAM.addr+5),
 		MOVLW(0x07),
-		MOVWF(GRAM.addr+6);
+		MOVWF(GRAM.addr+6),
 		MOVLW(0x08),
-		MOVWF(GRAM.addr+7);
-
-		//Shift From RAM to Output
-		MOVLB(0),
-		MOVF(GRAM.addr+0),
-		MOVWF(ARGS.addr+0), //SHIFT_BYTE_OUT_ARG_RAM
-		MOVLW(LATA.addr),
-		MOVWF(ARGS.addr+1), //CURRENT_LATCH
-		MOVLW(0x80),
-		MOVWF(ARGS.addr+2), //CURRENT_PIN
-		CALL(37),
-		SLEEP(),
-
-		//SHIFT BYTE OUT
-		MOVLB(0),
-		MOVLW(8),
-		MOVWF(CRAM.addr+0), //SHIFT_BYTE_OUT_ARG_RAM
-		BTFSC(0x01, ARGS.addr+0),
-		BRA(2),
-		CALL(SHIFT_BIT_OUT_LOW),
-		BRA(1),
-		CALL(SHIFT_BIT_OUT_HIGH),
-		RRF(true, ARGS.addr+0),
-		MOVLF(1),
-		SUBWF(true, CRAM.addr+0),
-		MOVLB(0),
-		BTFSC(2,0x03),
-		BRA(-14),
-		RETURN(),
-
-		//SHIFT_BIT_OUT_HIGH
-		//SHIFT_BIT_OUT_LOW
-
-
-
+		MOVWF(GRAM.addr+7),
+		//CALL(37), //CALL Parallel Shift
+		MOVLB(0), //Parallel Shift
+		MOVLW(0xdf), //Set Pin 5 as (inverted) mask
+		XORWF(true,LATA.addr), //Set pin 5 low
+		BTFSC(1,GRAM.addr+0), //Shift Register 1
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x80), //RA7 Pin
+		IORWF(true,LATA.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0x7f), //~RA7 Pin
+		XORWF(true,LATA.addr), //Set low
+		BTFSC(1,GRAM.addr+1), //Shift Register 2
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x40), //RA7 Pin
+		IORWF(true,LATA.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xbf), //~RA7 Pin
+		XORWF(true,LATA.addr), //Set low
+		BTFSC(1,GRAM.addr+2), //Shift Register 3
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x01), //RC0 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xf7), //~RC0 Pin
+		XORWF(true,LATC.addr), //Set low
+		BTFSC(1,GRAM.addr+3), //Shift Register 4
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x02), //RC1 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xfd), //~RC1 Pin
+		XORWF(true,LATC.addr), //Set low
+		BTFSC(1,GRAM.addr+4), //Shift Register 5
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x04), //RC2 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xfb), //~RC2 Pin
+		XORWF(true,LATC.addr), //Set low
+		BTFSC(1,GRAM.addr+5), //Shift Register 6
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x08), //RC3 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xf7), //~RC3 Pin
+		XORWF(true,LATC.addr), //Set low
+		BTFSC(1,GRAM.addr+6), //Shift Register 7
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x10), //RC4 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xef), //~RC4 Pin
+		XORWF(true,LATC.addr), //Set low
+		BTFSC(1,GRAM.addr+7), //Shift Register 8
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x20), //RC5 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xdf), //~RC5 Pin
+		XORWF(true,LATC.addr), //Set low
+		BTFSC(1,GRAM.addr+8), //Shift register 9
+		BRA(1), //if( set )
+		BRA(3), //if( clr )
+		MOVLW(0x40), //RC6 Pin
+		IORWF(true,LATC.addr), //Set High
+		BRA(2), //continue
+		MOVLW(0xbf), //~RC6 Pin
+		XORWF(true,LATC.addr), //Set low
+		CALL(5), //DELAY LOWCLOCKTIME
+		MOVLW(0x20), //Set Pin 5 as mask
+		IORWF(true,LATA.addr), //Set pin 5 high
+		CALL(5), //DELAY HIGHCLOCKTIME
+		BRA(-79),
 	};
+#else
+
+	uint32_t program[] = {
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+		0x0000,
+	};
+#endif
+
+	uint32_t software_size = sizeof(program) / sizeof(uint32_t);
+	uint32_t minimum_size = software_size + 32 - (software_size % 32);
+	uint32_t total_rows = minimum_size / 32;
+
+	uint32_t *temp_mem = new uint32_t[minimum_size];
+	for( int i = 0; i < minimum_size; i++ ){
+		if( i < software_size ) temp_mem[i] = program[i];
+		else temp_mem[i] = 0x0000;
+		//fprintf(stdout, "%04x\n", temp_mem[i]);
+	}
 
 	Programmer pic;
 	pic.start(); //&Enter programming mode
@@ -517,19 +622,19 @@ int main( int argc, char** argv ){
 	pic.bulkErase();
 	//Write Program Memory
 	//Verify Program Memory
-	if( !pic.writeRow( 0, program, 32 ) ){
-		fprintf(stderr, "Failed to write to memory\n");
+#if 1
+	for(int i = 0; i < total_rows; i++ ){
+		fprintf(stdout, "Row: %d [addr: %d]\n", i, 32*i);
+		if( !pic.writeRow( 32*i, &temp_mem[32*i], 32 ) ){
+			fprintf(stderr, "Failed to write to memory\n");
+		}
 	}
-	if( !pic.writeRow( 32, &program[32], 32 ) ){
-		fprintf(stderr, "Failed to write to memory\n");
-	}
+	delete [] temp_mem;
+#endif
 	//Write User IDs
 	//Verify User Ids
 	//Write Configuration words
 	//verify configuration words
-	//
-	
-	fprintf(stdout, "\n");
 	
 	pic.setPC(0x8000);
 	for( int i = 0; i < 4; i++ ){
