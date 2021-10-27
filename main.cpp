@@ -4,9 +4,11 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <vector>
 #include <inttypes.h>
 
 #include "pic.h"
+
 
 #define TENTS 1
 #define TENTH 250
@@ -153,6 +155,68 @@ public:
 		m_clock  = Pin(clock);
 		m_data   = Pin(data);
 		m_pwr    = Pin(power);
+
+	}
+	void addCMD( uint32_t cmd, const char* func = NULL, bool resolve = false ){
+		if( func != NULL ){
+			if( resolve ){
+				Functions f(m_software.size(), func, true );
+				m_func.push_back( f );
+			}
+			else{
+				Functions f(m_software.size(), func, false );
+				m_func.push_back( f ) ;
+			}
+		}
+		m_software.push_back(cmd);
+
+	}
+	uint32_t resolve( uint32_t cmd, const char* name ){
+		for( unsigned int i = 0; i < m_func.size(); i++){
+			if( strcmp( name, m_func[i].name ) == 0 && m_func[i].call == false ){
+				if( (cmd & 0x3800) == 0x2000 ){ //CALL
+					return 0x3800 | ( m_func[i].addr & 0x7f );
+				}
+				else{
+					fprintf(stderr, "UNIMPLEMENTED\n");
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
+		fprintf(stderr, "UNEXPECTED END OF FUNCTION\n");
+		return 0x0000;
+	}
+	void uploadMain(){
+		uint32_t software_size = m_software.size();
+		uint32_t minimum_size = software_size + 32 - (software_size % 32);
+		uint32_t total_rows = minimum_size / 32;
+
+		uint32_t *temp_mem = new uint32_t[minimum_size];
+		for( unsigned int i = 0; i < minimum_size; i++ ){
+			if( i < software_size ){
+				for( unsigned int j = 0; j < m_func.size(); j++){
+					if( i == m_func[j].addr ){
+						if( m_func[j].call == true ){
+							temp_mem[i] = resolve(
+									m_software[i],
+									m_func[j].name
+								);
+							continue;
+						}
+					}
+				}
+				temp_mem[i] = m_software[i];
+			}
+			else temp_mem[i] = 0x0000;
+		}
+		for(unsigned int i = 0; i < total_rows; i++ ){
+			fprintf(stdout, "Row: %d [addr: %d]\n", i, 32*i);
+			if( !writeRow( 32*i, &temp_mem[32*i], 32 ) ){
+				fprintf(stderr, "Failed to write to memory\n");
+			}
+		}
+		delete [] temp_mem;
+
 	}
 	~Programmer(){
 		if( m_open ){
@@ -420,6 +484,19 @@ private:
 	uint16_t eesiz;
 	uint16_t pcnt;
 
+	std::vector<uint32_t> m_software;
+	typedef struct funclocats{
+		uint32_t addr;
+		const char* name;
+		bool call;
+		funclocats( uint32_t a, const char* n, bool c = false ){
+			addr = a;
+			name = n;
+			call = c;
+		}
+	}Functions;
+	std::vector<Functions> m_func;
+
 	bool m_open;
 
 	Pin m_clock;
@@ -428,8 +505,9 @@ private:
 	Pin m_pwr;
 };
 
+
 using namespace Instructions;
-int main( int argc, char** argv ){
+int main( __attribute__((unused))int argc, __attribute__((unused))char** argv ){
 
 	uint32_t config[] = {
 		0x0111, //0x8007
@@ -445,18 +523,65 @@ int main( int argc, char** argv ){
 #if 1
 	uint32_t program[] = {
 		//MAIN
-		BRA(12),
+		BRA(51),
 		0x0000,
 		0x0000,
 		0x0000, //CALL SAVE DATA...
 		MOVLB(STATUS.bank),
-		MOVLW(0xff),
-		MOVWF(CRAM.addr+0),
-		MOVLW(1),
-		SUBWF(1,CRAM.addr+0),
-		BTFSC(3,STATUS.addr),
-		BRA(-5),
+		//MOVLW(0x01),
+		//MOVWF(CRAM.addr+0),
+		//MOVLW(1),
+		//SUBWF(1,CRAM.addr+0),
+		//BTFSC(3,STATUS.addr),
+		//BRA(-5),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
+		NOP(),
 		RETURN(),
+
 		
 		MOVLB(0), //INIT IO
 		MOVLW(0x01),
@@ -465,6 +590,14 @@ int main( int argc, char** argv ){
 		MOVWF(TRISB.addr),
 		MOVLW(0x00),
 		MOVWF(TRISC.addr),
+
+		MOVLW(0x02),
+		MOVWF(LATA.addr),
+		CALL(3),
+		MOVLW(0x00),
+		MOVWF(LATA.addr),
+		CALL(3),
+		BRA(-7),
 
 		//LOAD Temporary data in General RAM
 		MOVLB(0),
@@ -567,70 +700,35 @@ int main( int argc, char** argv ){
 		BRA(-79),
 	};
 #else
-
-	uint32_t program[] = {
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-		0x0000,
-	};
 #endif
 
-	uint32_t software_size = sizeof(program) / sizeof(uint32_t);
-	uint32_t minimum_size = software_size + 32 - (software_size % 32);
-	uint32_t total_rows = minimum_size / 32;
-
-	uint32_t *temp_mem = new uint32_t[minimum_size];
-	for( int i = 0; i < minimum_size; i++ ){
-		if( i < software_size ) temp_mem[i] = program[i];
-		else temp_mem[i] = 0x0000;
-		//fprintf(stdout, "%04x\n", temp_mem[i]);
-	}
 
 	Programmer pic;
+
+	pic.addCMD(0x0000);
+	pic.addCMD(BRA(13));
+	pic.addCMD(0x0000);
+	pic.addCMD(0x0000); //interrupt
+	pic.addCMD(MOVLB(0), "init");
+	pic.addCMD(MOVLW(0x01));
+	pic.addCMD(MOVLW(0x01));
+	pic.addCMD(MOVWF(TRISA.addr));
+	pic.addCMD(MOVLW(0xff));
+	pic.addCMD(MOVWF(TRISB.addr));
+	pic.addCMD(MOVLW(0x00));
+	pic.addCMD(MOVWF(TRISC.addr));
+	pic.addCMD(MOVLW(0xaa));
+	pic.addCMD(MOVWF(LATA.addr));
+	pic.addCMD(RETURN());
+	pic.addCMD(CALL(0), "init");
+
 	pic.start(); //&Enter programming mode
 
 	pic.setPC(0x8000); //according to table 3-2. This will erase all memory
 	pic.bulkErase();
 	//Write Program Memory
 	//Verify Program Memory
-#if 1
-	for(int i = 0; i < total_rows; i++ ){
-		fprintf(stdout, "Row: %d [addr: %d]\n", i, 32*i);
-		if( !pic.writeRow( 32*i, &temp_mem[32*i], 32 ) ){
-			fprintf(stderr, "Failed to write to memory\n");
-		}
-	}
-	delete [] temp_mem;
-#endif
+	pic.uploadMain();
 	//Write User IDs
 	//Verify User Ids
 	//Write Configuration words
