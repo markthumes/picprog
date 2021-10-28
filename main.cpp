@@ -157,25 +157,27 @@ public:
 		m_pwr    = Pin(power);
 
 	}
-	void addCMD( uint32_t cmd, const char* func = NULL, bool resolve = false ){
+	uint32_t addCMD( uint32_t cmd, const char* func = NULL, bool resolve = false ){
 		if( func != NULL ){
 			if( resolve ){
-				Functions f(m_software.size(), func, true );
+				Functions f(mem.size(), func, true );
 				m_func.push_back( f );
 			}
 			else{
-				Functions f(m_software.size(), func, false );
+				Functions f(mem.size(), func, false );
 				m_func.push_back( f ) ;
 			}
 		}
-		m_software.push_back(cmd);
+		mem.push_back(cmd);
+		return mem.size() - 1;
 
 	}
 	uint32_t resolve( uint32_t cmd, const char* name ){
 		for( unsigned int i = 0; i < m_func.size(); i++){
 			if( strcmp( name, m_func[i].name ) == 0 && m_func[i].call == false ){
 				if( (cmd & 0x3800) == 0x2000 ){ //CALL
-					return 0x3800 | ( m_func[i].addr & 0x7f );
+					fprintf(stdout, "%d, %d\n", i, m_func[i].addr);
+					return 0x2000 | ( m_func[i].addr & 0x7f );
 				}
 				else{
 					fprintf(stderr, "UNIMPLEMENTED\n");
@@ -187,7 +189,7 @@ public:
 		return 0x0000;
 	}
 	void uploadMain(){
-		uint32_t software_size = m_software.size();
+		uint32_t software_size = mem.size();
 		uint32_t minimum_size = software_size + 32 - (software_size % 32);
 		uint32_t total_rows = minimum_size / 32;
 
@@ -197,15 +199,14 @@ public:
 				for( unsigned int j = 0; j < m_func.size(); j++){
 					if( i == m_func[j].addr ){
 						if( m_func[j].call == true ){
-							temp_mem[i] = resolve(
-									m_software[i],
+							mem[i] = resolve(
+									mem[i],
 									m_func[j].name
 								);
-							continue;
 						}
 					}
 				}
-				temp_mem[i] = m_software[i];
+				temp_mem[i] = mem[i];
 			}
 			else temp_mem[i] = 0x0000;
 		}
@@ -343,7 +344,7 @@ public:
 			write( Instructions::READNVM_INCPC );
 			usleep( TDLY );
 			uint32_t ret = read(PAYLOADSZ);
-			fprintf(stdout, "Ret: %04x - Dat: %04x\n", ret, data[i] );
+			fprintf(stdout, "%d: Ret: %04x - Dat: %04x\n", i, ret, data[i] );
 			if( ret != data[i] ) return false;
 			usleep( TDLY );
 		}
@@ -399,6 +400,7 @@ public:
 		vppFirstExit();
 	}
 
+	std::vector<uint32_t> mem;
 protected:
 	void write( uint32_t word, unsigned int numberofbits = 8 ){
 		m_clock.setDirection(Pin::OUTPUT);
@@ -484,7 +486,6 @@ private:
 	uint16_t eesiz;
 	uint16_t pcnt;
 
-	std::vector<uint32_t> m_software;
 	typedef struct funclocats{
 		uint32_t addr;
 		const char* name;
@@ -520,207 +521,43 @@ int main( __attribute__((unused))int argc, __attribute__((unused))char** argv ){
 		'M', 'a', 'r', 'k'
 	};
 
-#if 1
-	uint32_t program[] = {
-		//MAIN
-		BRA(51),
-		0x0000,
-		0x0000,
-		0x0000, //CALL SAVE DATA...
-		MOVLB(STATUS.bank),
-		//MOVLW(0x01),
-		//MOVWF(CRAM.addr+0),
-		//MOVLW(1),
-		//SUBWF(1,CRAM.addr+0),
-		//BTFSC(3,STATUS.addr),
-		//BRA(-5),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		NOP(),
-		RETURN(),
-
-		
-		MOVLB(0), //INIT IO
-		MOVLW(0x01),
-		MOVWF(TRISA.addr),
-		MOVLW(0xff),
-		MOVWF(TRISB.addr),
-		MOVLW(0x00),
-		MOVWF(TRISC.addr),
-
-		MOVLW(0x02),
-		MOVWF(LATA.addr),
-		CALL(3),
-		MOVLW(0x00),
-		MOVWF(LATA.addr),
-		CALL(3),
-		BRA(-7),
-
-		//LOAD Temporary data in General RAM
-		MOVLB(0),
-		MOVLW(0xaa),
-		MOVWF(GRAM.addr+0),
-		MOVLW(0x02),
-		MOVWF(GRAM.addr+1),
-		MOVLW(0x03),
-		MOVWF(GRAM.addr+2),
-		MOVLW(0x04),
-		MOVWF(GRAM.addr+3),
-		MOVLW(0x05),
-		MOVWF(GRAM.addr+4),
-		MOVLW(0x06),
-		MOVWF(GRAM.addr+5),
-		MOVLW(0x07),
-		MOVWF(GRAM.addr+6),
-		MOVLW(0x08),
-		MOVWF(GRAM.addr+7),
-		//CALL(37), //CALL Parallel Shift
-		MOVLB(0), //Parallel Shift
-		MOVLW(0xdf), //Set Pin 5 as (inverted) mask
-		XORWF(true,LATA.addr), //Set pin 5 low
-		BTFSC(1,GRAM.addr+0), //Shift Register 1
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x80), //RA7 Pin
-		IORWF(true,LATA.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0x7f), //~RA7 Pin
-		XORWF(true,LATA.addr), //Set low
-		BTFSC(1,GRAM.addr+1), //Shift Register 2
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x40), //RA7 Pin
-		IORWF(true,LATA.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xbf), //~RA7 Pin
-		XORWF(true,LATA.addr), //Set low
-		BTFSC(1,GRAM.addr+2), //Shift Register 3
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x01), //RC0 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xf7), //~RC0 Pin
-		XORWF(true,LATC.addr), //Set low
-		BTFSC(1,GRAM.addr+3), //Shift Register 4
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x02), //RC1 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xfd), //~RC1 Pin
-		XORWF(true,LATC.addr), //Set low
-		BTFSC(1,GRAM.addr+4), //Shift Register 5
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x04), //RC2 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xfb), //~RC2 Pin
-		XORWF(true,LATC.addr), //Set low
-		BTFSC(1,GRAM.addr+5), //Shift Register 6
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x08), //RC3 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xf7), //~RC3 Pin
-		XORWF(true,LATC.addr), //Set low
-		BTFSC(1,GRAM.addr+6), //Shift Register 7
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x10), //RC4 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xef), //~RC4 Pin
-		XORWF(true,LATC.addr), //Set low
-		BTFSC(1,GRAM.addr+7), //Shift Register 8
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x20), //RC5 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xdf), //~RC5 Pin
-		XORWF(true,LATC.addr), //Set low
-		BTFSC(1,GRAM.addr+8), //Shift register 9
-		BRA(1), //if( set )
-		BRA(3), //if( clr )
-		MOVLW(0x40), //RC6 Pin
-		IORWF(true,LATC.addr), //Set High
-		BRA(2), //continue
-		MOVLW(0xbf), //~RC6 Pin
-		XORWF(true,LATC.addr), //Set low
-		CALL(5), //DELAY LOWCLOCKTIME
-		MOVLW(0x20), //Set Pin 5 as mask
-		IORWF(true,LATA.addr), //Set pin 5 high
-		CALL(5), //DELAY HIGHCLOCKTIME
-		BRA(-79),
-	};
-#else
-#endif
-
 
 	Programmer pic;
 
-	pic.addCMD(0x0000);
-	pic.addCMD(BRA(13));
-	pic.addCMD(0x0000);
-	pic.addCMD(0x0000); //interrupt
-	pic.addCMD(MOVLB(0), "init");
-	pic.addCMD(MOVLW(0x01));
-	pic.addCMD(MOVLW(0x01));
-	pic.addCMD(MOVWF(TRISA.addr));
-	pic.addCMD(MOVLW(0xff));
-	pic.addCMD(MOVWF(TRISB.addr));
-	pic.addCMD(MOVLW(0x00));
-	pic.addCMD(MOVWF(TRISC.addr));
-	pic.addCMD(MOVLW(0xaa));
-	pic.addCMD(MOVWF(LATA.addr));
-	pic.addCMD(RETURN());
-	pic.addCMD(CALL(0), "init");
+	pic.addCMD( 0x0000  );
+	uint32_t reset = pic.addCMD( BRA(24) );
+	pic.addCMD( 0x0000  );
+	pic.addCMD( 0x0000  ); //interrupt
+	pic.addCMD( MOVLB(0), "init");
+	pic.addCMD( MOVLW(0x01) );
+	pic.addCMD( MOVWF(TRISA.addr) );
+	pic.addCMD( MOVLW(0xff) );
+	pic.addCMD( MOVWF(TRISB.addr) );
+	pic.addCMD( MOVLW(0x00) );
+	pic.addCMD( MOVWF(TRISC.addr) );
+	pic.addCMD( RETURN() );
+	pic.addCMD( MOVLW(0xaa), "alternate_aa");
+	pic.addCMD( MOVWF(LATA.addr) );
+	pic.addCMD( RETURN() );
+	pic.addCMD( MOVLW(0x55), "alternate_55");
+	pic.addCMD( MOVWF(LATA.addr) );
+	pic.addCMD( RETURN() );
+	pic.addCMD( MOVLW(0xff), "delay");
+	pic.addCMD( MOVWF( GRAM.addr + 0 ) );
+	pic.addCMD( MOVLW(1) );
+	pic.addCMD( SUBWF( 1, GRAM.addr + 0 ) );
+	pic.addCMD( BTFSC( 0, 0x03 ) );
+	pic.addCMD( BRA(-4) );
+	pic.addCMD( RETURN() );
+	uint32_t start = pic.addCMD( MOVLP(0) ); //VERY IMPORTANT FOR MAKING FUNCTION CALLS!!!
+	pic.addCMD( CALL(0), "init", true);
+	pic.addCMD( CALL(0), "alternate_aa", true);
+	pic.addCMD( CALL(0), "delay", true);
+	pic.addCMD( CALL(0), "alternate_55", true);
+	pic.addCMD( CALL(0), "delay", true);
+	pic.addCMD( BRA(-5) );
+
+	pic.mem[1] = BRA( start - reset );
 
 	pic.start(); //&Enter programming mode
 
