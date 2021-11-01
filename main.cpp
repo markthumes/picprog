@@ -10,24 +10,26 @@
 #include "pic.h"
 
 
-#define TENTS 1
+#define TENTS 10
 #define TENTH 250
-#define TCKL  1
-#define TCKH  1
-#define TDS   1
-#define TDH   1
-#define TDLY  1
+#define TCKL  10
+#define TCKH  10
+#define TDS   10
+#define TDH   10
+#define TDLY  10
 #define TERAB 13000
 #define TERAR 2800
 #define TPEXT 2100
 #define TPINT 2800
-#define TEXIT 1
+#define TEXIT 10
 #define TDIS 300
 
 typedef struct reggi{
 	uint8_t addr;
 	uint8_t bank;
 	reggi(uint8_t a, uint8_t b):addr(a),bank(b){
+	}
+	reggi(){
 	}
 }Register;
 
@@ -47,6 +49,8 @@ namespace Instructions{
 	const uint8_t ENDEXTPROGRAM     = 0x82;
 
 	const Register STATUS(0x03, 0 );
+	const Register INTCON(0x0b, 0 );
+	const Register INTPPS(0x10, 0 );
 	const Register PORTA( 0x0c, 0 );
 	const Register PORTB( 0x0d, 0 );
 	const Register PORTC( 0x0e, 0 );
@@ -65,6 +69,12 @@ namespace Instructions{
 	const Register SFR  ( 0x0c, 0 );
 	const Register GRAM ( 0x20, 0 );
 	const Register CRAM ( 0x70, 0 ); //COMMON Register RAM
+	const Register PIR0 ( 0x0c, 0 );
+	const Register PIR1 ( 0x0d, 0 );
+	const Register PIR2 ( 0x0e, 0 );
+	const Register PIE0 ( 0x16, 0 );
+	const Register PIE1 ( 0x17, 0 );
+	const Register PIE2 ( 0x18, 0 );
 
 	/* PIC Instruction Set */
 	/* Byte-Oriented Operations */
@@ -117,6 +127,7 @@ namespace Instructions{
 	uint32_t CALLW (            ){ return ( 0x000a ); } 
 	uint32_t GOTO  ( uint16_t k ){ return ( 0x2800 | ( k & 0x7ff ) ); }
 	//uint32_t RETFIE( uint16_t k ){ return ( 0x2800 | ( k & 0x7ff ) ); } //SEEMS INCORRECT IN MANUAL
+	uint32_t RETFIE(){ return 0x0009; }
 	uint32_t RETLW ( uint8_t k ){ return ( 0x3400 | ( k & 0xff ) ); }
 	uint32_t RETURN(            ){ return ( 0x0008 ); } 
 
@@ -176,7 +187,6 @@ public:
 		for( unsigned int i = 0; i < m_func.size(); i++){
 			if( strcmp( name, m_func[i].name ) == 0 && m_func[i].call == false ){
 				if( (cmd & 0x3800) == 0x2000 ){ //CALL
-					fprintf(stdout, "%d, %d\n", i, m_func[i].addr);
 					return 0x2000 | ( m_func[i].addr & 0x7f );
 				}
 				else{
@@ -398,6 +408,10 @@ public:
 
 	void stop(){
 		vppFirstExit();
+		m_mclr.setDirection(Pin::OUTPUT);
+		m_pwr.setDirection(Pin::OUTPUT);
+		m_clock.setDirection(Pin::OUTPUT);
+		m_data.setDirection(Pin::OUTPUT);
 	}
 
 	std::vector<uint32_t> mem;
@@ -512,7 +526,7 @@ int main( __attribute__((unused))int argc, __attribute__((unused))char** argv ){
 
 	uint32_t config[] = {
 		0x0111, //0x8007
-		0x3218, //0x8008
+		0x3a18, //0x8008
 		0x0000, //0x8009
 		0x2b98, //0x800a
 		0x0001  //0x800b
@@ -521,43 +535,166 @@ int main( __attribute__((unused))int argc, __attribute__((unused))char** argv ){
 		'M', 'a', 'r', 'k'
 	};
 
+#if 0
+	uint32_t test[30];
+	test[ 0] = NOP();
+	test[ 1] = BRA(5);
+	test[ 2] = NOP();
+	test[ 3] = NOP();
+	test[ 4] = MOVLP(0);
+	test[ 5] = CALL(0x1a);
+	test[ 6] = RETFIE();
+	test[ 7] = MOVLB(0);
+	test[ 8] = MOVLW(0x01);
+	test[ 9] = MOVWF(TRISB.addr);
+	test[10] = MOVLW(0x00);
+	test[11] = MOVWF(TRISC.addr);
+	test[12] = MOVWF(LATC.addr);
+	test[13] = MOVLB(14);
+	test[14] = MOVLW(0);
+	test[15] = MOVWF(PIR0.addr);
+	test[16] = MOVLW(0x01);
+	test[17] = MOVWF(PIE0.addr);
+	test[18] = MOVLB(0);
+	test[19] = BSF(7, INTCON.addr);
+	test[20] = CLRWDT();
+	test[21] = MOVLB(14);
+	test[22] = MOVF(0,PIR0.addr);
+	test[23] = MOVLB(0);
+	test[24] = MOVWF(LATC.addr);
+	test[25] = BRA(-6);
+	test[26] = MOVLB(0);
+	test[27] = MOVLW(0xce);
+	test[28] = MOVWF(PORTC.addr);
+	test[29] = RETURN();
+
+	for( int i = 0; i < 30; i++){
+		fprintf(stdout, "%04x\n", test[i]);
+	}
+	return 1;
+#endif
 
 	Programmer pic;
 
+	/********** CONFIGURE VECTORS **********/
 	pic.addCMD( 0x0000  );
-	uint32_t reset = pic.addCMD( BRA(24) );
+	pic.addCMD( GOTO(0) );
 	pic.addCMD( 0x0000  );
-	pic.addCMD( 0x0000  ); //interrupt
-	pic.addCMD( MOVLB(0), "init");
-	pic.addCMD( MOVLW(0x01) );
-	pic.addCMD( MOVWF(TRISA.addr) );
-	pic.addCMD( MOVLW(0xff) );
-	pic.addCMD( MOVWF(TRISB.addr) );
-	pic.addCMD( MOVLW(0x00) );
-	pic.addCMD( MOVWF(TRISC.addr) );
-	pic.addCMD( RETURN() );
-	pic.addCMD( MOVLW(0xaa), "alternate_aa");
-	pic.addCMD( MOVWF(LATA.addr) );
-	pic.addCMD( RETURN() );
-	pic.addCMD( MOVLW(0x55), "alternate_55");
-	pic.addCMD( MOVWF(LATA.addr) );
-	pic.addCMD( RETURN() );
-	pic.addCMD( MOVLW(0xff), "delay");
-	pic.addCMD( MOVWF( GRAM.addr + 0 ) );
-	pic.addCMD( MOVLW(1) );
-	pic.addCMD( SUBWF( 1, GRAM.addr + 0 ) );
-	pic.addCMD( BTFSC( 0, 0x03 ) );
-	pic.addCMD( BRA(-4) );
-	pic.addCMD( RETURN() );
-	uint32_t start = pic.addCMD( MOVLP(0) ); //VERY IMPORTANT FOR MAKING FUNCTION CALLS!!!
-	pic.addCMD( CALL(0), "init", true);
-	pic.addCMD( CALL(0), "alternate_aa", true);
-	pic.addCMD( CALL(0), "delay", true);
-	pic.addCMD( CALL(0), "alternate_55", true);
-	pic.addCMD( CALL(0), "delay", true);
-	pic.addCMD( BRA(-5) );
+	pic.addCMD( 0x0000  );
+	pic.addCMD( NOP(), "interrupt" );
+	pic.addCMD( CALL(0), "RA0high", true);
+	pic.addCMD( CALL(0), "RA0low", true);
+	pic.addCMD( MOVLB(0) );
+	pic.addCMD( MOVF(0, PIR0.addr ) );
+	pic.addCMD( MOVWF( LATC.addr ) );
+	pic.addCMD( MOVLB(14) );
+	pic.addCMD( BCF(0, PIR0.addr ) ); //Just clear INTF
+	pic.addCMD( RETFIE() );
 
-	pic.mem[1] = BRA( start - reset );
+	/********** INITIALIZE PORTS  **********/
+	uint32_t sop = pic.addCMD( 0x0000  );
+	pic.mem[1] = GOTO(sop);
+	pic.addCMD( MOVLB(62) );
+	pic.addCMD( CLRF( 0x43) );
+	pic.addCMD( MOVLB(0) );
+	pic.addCMD( MOVLP(0) );
+	pic.addCMD( CLRF( TRISA.addr ) );
+	pic.addCMD( MOVLW(0x01) ); //0 = output, 1 = input
+	pic.addCMD( MOVWF(TRISB.addr) );
+	pic.addCMD( CLRF(TRISC.addr) );
+	pic.addCMD( MOVLW(0xaa) ); //0 = output, 1 = input
+	pic.addCMD( MOVWF( LATC.addr ) );
+
+	/**********   CLEAR PORT A    **********/
+	pic.addCMD( MOVLB(0) );
+	pic.addCMD( CLRF( LATA.addr ));
+
+	/**********   CONFIGURE INT   **********/
+	pic.addCMD( CALL(0), "configure_interrupt", true );
+
+	/**********   SENTINEL TEMP   **********/
+	pic.addCMD( CALL(0), "RA1high", true);
+	pic.addCMD( CALL(0), "RA0high", true);
+	pic.addCMD( CALL(0), "RA0low", true);
+	pic.addCMD( CALL(0), "RA2high", true);
+	pic.addCMD( CALL(0), "RA2low", true);
+	pic.addCMD( CALL(0), "RA1low", true);
+
+	/**********   TEST SUBTRACT   **********/
+	pic.addCMD( MOVLW(2) );
+	pic.addCMD( MOVWF(GRAM.addr));
+
+	pic.addCMD( MOVLW(1) );
+	pic.addCMD( SUBWF(1,GRAM.addr));
+	pic.addCMD( BTFSC( 2, STATUS.addr )); //(bit0)C = CARRY!! (bit2)Z = ZER0
+	pic.addCMD( CALL(0), "RA2high", true);
+
+	pic.addCMD( MOVLW(1) );
+	pic.addCMD( SUBWF(1,GRAM.addr));
+	pic.addCMD( BTFSC( 2, STATUS.addr ));
+	pic.addCMD( CALL(0), "RA2high", true);
+
+	/**********   SENTINEL TEMP   **********/
+	pic.addCMD( CALL(0), "RA1high", true);
+	pic.addCMD( CALL(0), "RA0high", true);
+	pic.addCMD( CALL(0), "RA0low", true);
+	pic.addCMD( CALL(0), "RA1low", true);
+
+	/**********   SPIN LOOP       **********/
+	pic.addCMD( NOP() );
+	pic.addCMD( CLRWDT() );
+	pic.addCMD( CALL(0), "RA2high", true);
+	pic.addCMD( CALL(0), "RA2low", true);
+	pic.addCMD( MOVLB( 14 ) );
+	pic.addCMD( MOVF(0, PIR0.addr ) );
+	pic.addCMD( MOVLB( 0 ) );
+	pic.addCMD( MOVWF( PORTC.addr ) );
+#if 0
+	pic.addCMD( MOVLW( 0x01 ) );
+	pic.addCMD( MOVWF( PORTB.addr) );
+#else
+	pic.addCMD(NOP());
+	pic.addCMD(NOP());
+#endif
+	pic.addCMD( BRA(-11));
+
+	/*<><><><><> F U N C T I O N S <><><><><>*/
+
+	/********** func() set RAO high ********/
+	pic.addCMD( BSF(0,LATA.addr), "RA0high");
+	pic.addCMD( RETURN() );
+	/********** func() set RAO low ********/
+	pic.addCMD( BCF(0,LATA.addr), "RA0low");
+	pic.addCMD( RETURN() );
+	/********** func() set RA1 high ********/
+	pic.addCMD( BSF(1,LATA.addr), "RA1high");
+	pic.addCMD( RETURN() );
+	/********** func() set RA1 low ********/
+	pic.addCMD( BCF(1,LATA.addr), "RA1low");
+	pic.addCMD( RETURN() );
+	/********** func() set RA2 high ********/
+	pic.addCMD( BSF(2,LATA.addr), "RA2high");
+	pic.addCMD( RETURN() );
+	/********** func() set RA2 low ********/
+	pic.addCMD( BCF(2,LATA.addr), "RA2low");
+	pic.addCMD( RETURN() );
+
+	/********** func() configure interrupts ***********/
+	pic.addCMD( NOP(), "configure_interrupt"  ); //move to bank 61
+	/* Clear old interrupts */
+	pic.addCMD( MOVLB(14) );
+	pic.addCMD( CLRF(PIR0.addr)); //clear PIR0
+	pic.addCMD( CLRF(PIR1.addr)); //clear PIR1
+	pic.addCMD( CLRF(PIR2.addr)); //clear PIR2
+	pic.addCMD( MOVLW(0x01) );
+	pic.addCMD( MOVWF(PIE0.addr)); //set PIE0
+	pic.addCMD( BSF(7, INTCON.addr) );
+
+	pic.addCMD(MOVLB(0)); //reset back Bank
+	pic.addCMD( RETURN() );
+
+
+
 
 	pic.start(); //&Enter programming mode
 
@@ -605,6 +742,7 @@ int main( __attribute__((unused))int argc, __attribute__((unused))char** argv ){
 
 	usleep(10000);
 	pic.powerOn();
+	
 
 	return 1;
 }
